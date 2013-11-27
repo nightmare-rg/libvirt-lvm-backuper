@@ -1,15 +1,24 @@
-#!/bin/bash
+#!/bin/bash - 
+#===============================================================================
 #
-# lvm vm backup for libvirt
-# author: Jörg Stewig <nightmare@rising-gods.de>
+#          FILE: lvm-backuper.sh
+# 
+#         USAGE: ./lvm-backuper.sh vm vmname -d /tmp/ [-ssh "-p 22 user@example.com:/path/to/dest"] [-ts +%F]
+#
+#        AUTHOR: Jörg Stewig (nightmare@rising-gods.de), 
+#===============================================================================
 
-### functions
+#===============================================================================
+#  FUNCTION DEFINITIONS
+#===============================================================================
+
 function usage
 {
-    echo -e "\nusage: $0 -vm vmname -d /tmp/ -ssh \"-p 22 user@example.com:/path/to/dest\" \n"
+    echo -e "\nusage: $0 -vm vmname -d /tmp/ [-ssh \"-p 22 user@example.com:/path/to/dest\"] [-ts +%F] \n"
     echo -e "-vm, \t--vmname \tguestname"
     echo -e "-ssh, \t--ssh-location \tstream to extern server location"
-    echo -e "-d, \t--destimation \tpath to backup location: /tmp\n"
+    echo -e "-d, \t--destimation \tpath to backup location: /tmp"
+    echo -e "-ts, \t--timestamp \tcustom timestamp: +%F (use date --help for information)\n"
 }
 
 function lvm-snap
@@ -30,8 +39,8 @@ function backup-local
 {
 	echo "[INFO] starting backup to local destination: ${DEST}.."
 	snapname=`echo $1 | cut -d"/" -f4`
-	virsh dumpxml $VMNAME > $DEST/${VMNAME}-`date +%F`.xml
-	dd if=${1}_snap bs=4M | lzop -c > $DEST/${snapname}_snap-`date +%F`.img.lzo
+	virsh dumpxml $VMNAME > $DEST/${VMNAME}-`date $TS`.xml
+	dd if=${1}_snap bs=4M | lzop -c > $DEST/${snapname}_snap-`date $TS`.img.lzo
 }
 
 function backup-ssh
@@ -40,8 +49,8 @@ function backup-ssh
 	snapname=`echo $1 | cut -d"/" -f4`
 	sshCommand=`echo $BACKUPSSH | cut -d":" -f1`
 	sshFolder=`echo $BACKUPSSH | cut -d":" -f2`
-	virsh dumpxml $VMNAME | ssh $sshCommand "cat - > $sshFolder/${VMNAME}-`date +%F`.xml"
-	dd if=${1}_snap bs=4M | lzop -c | ssh $sshCommand "cat - > $sshFolder/${snapname}_snap-`date +%F`.img.lzo"
+	virsh dumpxml $VMNAME | ssh $sshCommand "cat - > $sshFolder/${VMNAME}-`date $TS`.xml"
+	dd if=${1}_snap bs=4M | lzop -c | ssh $sshCommand "cat - > $sshFolder/${snapname}_snap-`date $TS`.img.lzo"
 }
 
 function check-lzop
@@ -56,6 +65,10 @@ control_c()
   exit $?
 }
 
+#===============================================================================
+#  MAIN SCRIPT
+#===============================================================================
+
 # check parameter count
 if [ "$#" -lt 3 ]; then
 usage
@@ -66,6 +79,7 @@ fi
 BACKUPSSH=''
 DEST=''
 VMNAME=''
+TS='+%F'
 
 # check if lzop is installed
 check-lzop
@@ -85,7 +99,10 @@ do
                           ;;
    -ssh  | --ssh )        shift
 			  			  BACKUPSSH=$1
-                          ;;                             
+                          ;;
+   -ts  | --timestamp )   shift
+			  			  TS=$1
+                          ;;
    -h  | --help )         usage
                           exit
                 	  ;;
@@ -108,15 +125,15 @@ do
    
    lvm-snap $i
    
-   if [ -n "$DEST" ]; then # do local backup
+    if [ -n "$DEST" ]; then # do local backup
    		backup-local $i
-   fi
+    fi
    
-	if [ -n "$BACKUPSSH" ]; then # do ssh backup
+    if [ -n "$BACKUPSSH" ]; then # do ssh backup
    		backup-ssh $i
-   fi
+    fi
    
-   lvm-snap-remove $i
+    lvm-snap-remove $i
    
 done
 
