@@ -21,4 +21,4 @@ usage: ./lvm-backuper.sh -vm vmname -d /tmp/ [-ssh "-p 22 user@example.com:/path
 
 examples:
 
-for i in `virsh list | grep running | awk '{print $2}'`; do ./lvm-backuper.sh -vm $i -d /srv/lvm_backups/ -ts +%w; done
+for i in $(virsh list | grep running | awk '{print $2}'); do ./lvm-backuper.sh -vm $i -d /srv/lvm_backups/ -ts +%w; done
