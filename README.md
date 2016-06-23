@@ -4,9 +4,11 @@ libvirt-lvm-backuper
 lvm vm backup for libvirt
 
 
-usage: ./lvm-backuper.sh -vm vmname -d /tmp/ [-ssh "-p 22 user@example.com:/path/to/dest"] [-ts +%F] [-ex "storage01,storage02"] [-bw 2500]
+usage: ./lvm-backuper.sh -vm vmname -d /tmp/ [-pb] [-ssh "-p 22 user@example.com:/path/to/dest"] [-ts +%F] [-ex "storage01,storage02"] [-bw 2500]
 
 -vm, 		--vmname 	    	guestname
+
+-pb,	--progressbar	show progressbar
 
 -ssh,   --ssh-location 	stream to extern server location
 
@@ -21,4 +23,4 @@ usage: ./lvm-backuper.sh -vm vmname -d /tmp/ [-ssh "-p 22 user@example.com:/path
 
 examples:
 
-for i in $(virsh list | grep running | awk '{print $2}'); do ./lvm-backuper.sh -vm $i -d /srv/lvm_backups/ -ts +%w; done
+for i in $(virsh list | grep running | awk '{print $2}'); do ./lvm-backuper.sh -vm $i -pb -d /srv/lvm_backups/ -ts +%w; done
