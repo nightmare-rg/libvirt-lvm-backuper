@@ -94,6 +94,7 @@ function check-trickle
 function check-pv
 {
   command -v pv >/dev/null 2>&1 || { echo >&2 "I require pv for progressbar but it's not installed. Use \"apt-get install pv\"  to solve this problem. Aborting.."; exit 1; }
+  command -v bc >/dev/null 2>&1 || { echo >&2 "I require bc for progressbar but it's not installed. Use \"apt-get install bc\"  to solve this problem. Aborting.."; exit 1; }
 }
 
 function findDeviceArray
