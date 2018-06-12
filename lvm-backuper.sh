@@ -14,9 +14,10 @@
 
 function usage
 {
-  echo -e "\nusage: $0 -vm vmname -d /tmp/ [-pb] [-ssh \"-p 22 user@example.com:/path/to/dest\"] [-ts +%F] [-ex \"storage01,storage02\"] [-bw 2500]\n"
+  echo -e "\nusage: $0 -vm vmname -d /tmp/ [-pb] [-ssh \"-p 22 user@example.com:/path/to/dest\"] [-s3 \"s3://BUCKET/PATH\"] [-ts +%F] [-ex \"storage01,storage02\"] [-bw 2500]\n"
   echo -e "-vm, \t--vmname \tguestname"
   echo -e "-d, \t--destimation \tpath to backup location: /tmp"
+  echo -e "-s3, \t--s3 \t\ts3 bucket to upload: s3://BUCKET/PATH (you need to configure your aws key first > aws configure)"
   echo -e "-pb, \t--progressbar \tshow progressbar"
   echo -e "-ssh, \t--ssh-location \tstream to extern server location"
   echo -e "-ts, \t--timestamp \tcustom timestamp: +%F (use date --help for information)"
@@ -29,7 +30,6 @@ function lvm-snap
   echo "[INFO] creating snapshot for ${1}.."
   snapname=`echo $1 | cut -d"/" -f4`
   lvcreate -s -L 2G -n ${snapname}_snap $1
-
 }
 
 function lvm-snap-remove
@@ -45,12 +45,12 @@ function backup-local
   virsh dumpxml $VMNAME > $DEST/${VMNAME}-`date $TS`.xml
 
   if [ -n "$PROGRESS" ]; then # show progressbar
-  lvmsize=`lvs $1 -o LV_SIZE --noheadings --units g --nosuffix`
-  lvmsize_rounded=`printf "%.0f" $(echo $lvmsize | bc)`
-  dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g  | lzop -c > $DEST/${snapname}_snap-`date $TS`.img.lzo
-else
-  dd if=${1}_snap bs=8M | lzop -c > $DEST/${snapname}_snap-`date $TS`.img.lzo
-fi
+    lvmsize=`lvs $1 -o LV_SIZE --noheadings --units g --nosuffix`
+    lvmsize_rounded=`printf "%.0f" $(echo $lvmsize | bc)`
+    dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g  | lzop -c > $DEST/${snapname}_snap-`date $TS`.img.lzo
+  else
+    dd if=${1}_snap bs=8M | lzop -c > $DEST/${snapname}_snap-`date $TS`.img.lzo
+  fi
 }
 
 function backup-ssh
@@ -63,22 +63,51 @@ function backup-ssh
 
   if [ -n "$BW" ]; then # limit bandwidth
   if [ -n "$PROGRESS" ]; then # show progressbar
-  lvmsize=`lvs $1 -o LV_SIZE --noheadings --units g --nosuffix`
-  lvmsize_rounded=`printf "%.0f" $(echo $lvmsize | bc)`
-  dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g | lzop -c | trickle -u $BW ssh $sshCommand "cat - > $sshFolder/${snapname}_snap-`date $TS`.img.lzo"
-else
-  dd if=${1}_snap bs=8M | lzop -c | trickle -u $BW ssh $sshCommand "cat - > $sshFolder/${snapname}_snap-`date $TS`.img.lzo"
-fi
-else
-  if [ -n "$PROGRESS" ]; then # show progressbar
-  lvmsize=`lvs $1 -o LV_SIZE --noheadings --units g --nosuffix`
-  lvmsize_rounded=`printf "%.0f" $(echo $lvmsize | bc)`
-  dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g | lzop -c | ssh $sshCommand "cat - > $sshFolder/${snapname}_snap-`date $TS`.img.lzo"
-else
-  dd if=${1}_snap bs=8M | lzop -c | ssh $sshCommand "cat - > $sshFolder/${snapname}_snap-`date $TS`.img.lzo"
-fi
-fi
+    lvmsize=`lvs $1 -o LV_SIZE --noheadings --units g --nosuffix`
+    lvmsize_rounded=`printf "%.0f" $(echo $lvmsize | bc)`
+    dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g | lzop -c | trickle -u $BW ssh $sshCommand "cat - > $sshFolder/${snapname}_snap-`date $TS`.img.lzo"
+  else
+    dd if=${1}_snap bs=8M | lzop -c | trickle -u $BW ssh $sshCommand "cat - > $sshFolder/${snapname}_snap-`date $TS`.img.lzo"
+  fi
+  else
+    if [ -n "$PROGRESS" ]; then # show progressbar
+      lvmsize=`lvs $1 -o LV_SIZE --noheadings --units g --nosuffix`
+      lvmsize_rounded=`printf "%.0f" $(echo $lvmsize | bc)`
+      dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g | lzop -c | ssh $sshCommand "cat - > $sshFolder/${snapname}_snap-`date $TS`.img.lzo"
+    else
+      dd if=${1}_snap bs=8M | lzop -c | ssh $sshCommand "cat - > $sshFolder/${snapname}_snap-`date $TS`.img.lzo"
+    fi
+  fi
+}
 
+function backup-aws
+{
+  echo "[INFO] starting backup to aws s3 destination: ${S3_PATH}.."
+  snapname=`echo $1 | cut -d"/" -f4`
+  virsh dumpxml $VMNAME | aws s3 cp - "${S3_PATH}/${VMNAME}-`date $TS`.xml"
+
+  if [ -n "$BW" ]; then # limit bandwidth
+  if [ -n "$PROGRESS" ]; then # show progressbar
+    lvmsize=`lvs $1 -o LV_SIZE --noheadings --units g --nosuffix`
+    lvmsize_rounded=`printf "%.0f" $(echo $lvmsize | bc)`
+    dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g | lzop -c | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+  else
+    dd if=${1}_snap bs=8M | lzop -c | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+  fi
+  else
+    if [ -n "$PROGRESS" ]; then # show progressbar
+      lvmsize=`lvs $1 -o LV_SIZE --noheadings --units g --nosuffix`
+      lvmsize_rounded=`printf "%.0f" $(echo $lvmsize | bc)`
+      dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g | lzop -c | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+    else
+      dd if=${1}_snap bs=8M | lzop -c | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+    fi
+  fi
+}
+
+function check-aws
+{
+  command -v aws >/dev/null 2>&1 || { echo >&2 "I require awscli but it's not installed. Use \"pip install awscli\"  to solve this problem. Aborting.."; exit 1; }
 }
 
 function check-lzop
@@ -144,7 +173,7 @@ trap control_c SIGINT
 while [ "$1" != "" ];
 do
   case $1 in
-    -vm  | --vmname )     	shift
+    -vm  | --vmname )      shift
     VMNAME=$1
     ;;
     -d  | --destination )  shift
@@ -152,6 +181,9 @@ do
     ;;
     -pb  | --progressbar )
     PROGRESS=1
+    ;;
+    -s3  | --s3 )          shift
+    S3_PATH=$1
     ;;
     -ssh  | --ssh )        shift
     BACKUPSSH=$1
@@ -186,6 +218,11 @@ if [ -n "$PROGRESS" ]; then # show progressbar
 check-pv
 fi
 
+# check if aws cli is installed if needed
+if [ -n "$S3_PATH" ]; then # use aws s3
+check-aws
+fi
+
 # get devices
 STRING=`virsh dumpxml $VMNAME | xmllint --xpath '/domain/devices/disk/source/@dev' - | sed s/dev=\"//g | sed s/\"//g`
 
@@ -209,15 +246,19 @@ do
     lvm-snap $i
 
     if [ -n "$DEST" ]; then # do local backup
-    backup-local $i
+      backup-local $i
+    fi
+
+    if [ -n "$BACKUPSSH" ]; then # do ssh backup
+      backup-ssh $i
+    fi
+
+    if [ -n "$S3_PATH" ]; then # do aws s3 backup
+      backup-aws $i
+    fi
+
+    lvm-snap-remove $i
   fi
-
-  if [ -n "$BACKUPSSH" ]; then # do ssh backup
-  backup-ssh $i
-fi
-
-lvm-snap-remove $i
-fi
 
 done
 
