@@ -105,6 +105,35 @@ function backup-aws
   fi
 }
 
+function copy-aws
+{
+  echo "[INFO] syncing backup to aws s3 destination: ${S3_PATH}.."
+
+  snapname=`echo $1 | cut -d"/" -f4`
+  virsh dumpxml $VMNAME | aws s3 cp - "${S3_PATH}/${VMNAME}-`date $TS`.xml"
+
+  snapfile="$DEST/${VMNAME}_snap-`date $TS`.img.lzo"
+
+  if [ -n "$BW" ]; then # limit bandwidth
+  if [ -n "$PROGRESS" ]; then # show progressbar
+    size=`stat -c "%s" $snapfile`
+    size_rounded=`printf "%.0f" $(echo $size | bc)`
+    cat $snapfile | pv -petrb -s${size_rounded}g | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+  else
+    cat $snapfile | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+  fi
+  else
+    if [ -n "$PROGRESS" ]; then # show progressbar
+      size=`stat -c "%s" $snapfile`
+      size_rounded=`printf "%.0f" $(echo $size | bc)`
+      cat $snapfile | pv -petrb -s${size_rounded}g | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+    else
+      cat $snapfile | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+    fi
+  fi
+
+}
+
 function check-aws
 {
   command -v aws >/dev/null 2>&1 || { echo >&2 "I require awscli but it's not installed. Use \"pip install awscli\"  to solve this problem. Aborting.."; exit 1; }
@@ -254,7 +283,11 @@ do
     fi
 
     if [ -n "$S3_PATH" ]; then # do aws s3 backup
-      backup-aws $i
+      if [ -n "$DEST" ]; then
+        copy-aws $i
+      else
+        backup-aws $i
+      fi
     fi
 
     lvm-snap-remove $i
