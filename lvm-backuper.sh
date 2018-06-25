@@ -117,16 +117,14 @@ function copy-aws
   if [ -n "$BW" ]; then # limit bandwidth
   if [ -n "$PROGRESS" ]; then # show progressbar
     size=`stat -c "%s" $snapfile`
-    size_rounded=`printf "%.0f" $(echo $size | bc)`
-    cat $snapfile | pv -petrb -s${size_rounded}g | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+    cat $snapfile | pv -petrb -s${size} | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
   else
     cat $snapfile | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
   fi
   else
     if [ -n "$PROGRESS" ]; then # show progressbar
       size=`stat -c "%s" $snapfile`
-      size_rounded=`printf "%.0f" $(echo $size | bc)`
-      cat $snapfile | pv -petrb -s${size_rounded}g | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+      cat $snapfile | pv -petrb -s${size} | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
     else
       cat $snapfile | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
     fi
