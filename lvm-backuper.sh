@@ -86,21 +86,29 @@ function backup-aws
   snapname=`echo $1 | cut -d"/" -f4`
   virsh dumpxml $VMNAME | aws s3 cp - "${S3_PATH}/${VMNAME}-`date $TS`.xml"
 
+  awssize=`lvs $1 -o LV_SIZE --noheadings --units b --nosuffix`
+
+  if [ "$awssize" -gt "5368709120" ]; then # > 5GB
+    expectsizeparam="--expected-size ${awssize}"
+  else
+    expectsizeparam=""
+  fi
+
   if [ -n "$BW" ]; then # limit bandwidth
   if [ -n "$PROGRESS" ]; then # show progressbar
     lvmsize=`lvs $1 -o LV_SIZE --noheadings --units g --nosuffix`
     lvmsize_rounded=`printf "%.0f" $(echo $lvmsize | bc)`
-    dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g | lzop -c | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+    dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g | lzop -c | trickle -u $BW aws s3 cp $expectsizeparam - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
   else
-    dd if=${1}_snap bs=8M | lzop -c | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+    dd if=${1}_snap bs=8M | lzop -c | trickle -u $BW aws s3 cp $expectsizeparam - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
   fi
   else
     if [ -n "$PROGRESS" ]; then # show progressbar
       lvmsize=`lvs $1 -o LV_SIZE --noheadings --units g --nosuffix`
       lvmsize_rounded=`printf "%.0f" $(echo $lvmsize | bc)`
-      dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g | lzop -c | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+      dd if=${1}_snap bs=8M | pv -petrb -s${lvmsize_rounded}g | lzop -c | aws s3 cp $expectsizeparam - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
     else
-      dd if=${1}_snap bs=8M | lzop -c | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+      dd if=${1}_snap bs=8M | lzop -c | aws s3 cp $expectsizeparam - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
     fi
   fi
 }
@@ -114,19 +122,25 @@ function copy-aws
 
   snapfile="$DEST/${VMNAME}_snap-`date $TS`.img.lzo"
 
+  size=`stat -c "%s" $snapfile`
+
+  if [ "$size" -gt "5368709120" ]; then # > 5 GB
+    expectsizeparam="--expected-size ${size}"
+  else
+    expectsizeparam=""
+  fi
+
   if [ -n "$BW" ]; then # limit bandwidth
   if [ -n "$PROGRESS" ]; then # show progressbar
-    size=`stat -c "%s" $snapfile`
-    cat $snapfile | pv -petrb -s${size} | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+    cat $snapfile | pv -petrb -s${size} | trickle -u $BW aws s3 cp $expectsizeparam - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
   else
-    cat $snapfile | trickle -u $BW aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+    cat $snapfile | trickle -u $BW aws s3 cp $expectsizeparam - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
   fi
   else
     if [ -n "$PROGRESS" ]; then # show progressbar
-      size=`stat -c "%s" $snapfile`
-      cat $snapfile | pv -petrb -s${size} | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+      cat $snapfile | pv -petrb -s${size} | aws s3 cp $expectsizeparam - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
     else
-      cat $snapfile | aws s3 cp - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
+      cat $snapfile | aws s3 cp $expectsizeparam - "${S3_PATH}/${snapname}_snap-`date $TS`.img.lzo"
     fi
   fi
 
