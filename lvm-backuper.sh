@@ -3,7 +3,7 @@
 #
 #   FILE: lvm-backuper.sh
 #
-#   USAGE: ./lvm-backuper.sh vm vmname -d /tmp/ [-pb] [-ssh "-p 22 user@example.com:/path/to/dest"] [-ts +%F] [-ex "storage01,storage02"] [-bw 2500]
+#   USAGE: ./lvm-backuper.sh -vm vmname -d /tmp/ [-pb] [-ssh "-p 22 user@example.com:/path/to/dest"] [-s3 "s3://BUCKET/PATH"] [-ts +%F] [-ex "storage01,storage02"] [-bw 2500] [-r 14]
 #
 #   AUTHOR: Jörg Stewig (nightmare@rising-gods.de),
 #===============================================================================
@@ -14,7 +14,7 @@
 
 function usage
 {
-  echo -e "\nusage: $0 -vm vmname -d /tmp/ [-pb] [-ssh \"-p 22 user@example.com:/path/to/dest\"] [-s3 \"s3://BUCKET/PATH\"] [-ts +%F] [-ex \"storage01,storage02\"] [-bw 2500]\n"
+  echo -e "\nusage: $0 -vm vmname -d /tmp/ [-pb] [-ssh \"-p 22 user@example.com:/path/to/dest\"] [-s3 \"s3://BUCKET/PATH\"] [-ts +%F] [-ex \"storage01,storage02\"] [-bw 2500] [-r 14]\n"
   echo -e "-vm, \t--vmname \tguestname"
   echo -e "-d, \t--destimation \tpath to backup location: /tmp"
   echo -e "-s3, \t--s3 \t\ts3 bucket to upload: s3://BUCKET/PATH (you need to configure your aws key first > aws configure)"
@@ -22,7 +22,8 @@ function usage
   echo -e "-ssh, \t--ssh-location \tstream to extern server location"
   echo -e "-ts, \t--timestamp \tcustom timestamp: +%F (use date --help for information)"
   echo -e "-ex, \t--exclude \texclude logical volume from backup"
-  echo -e "-bw, \t--bandwidth \tlimit bandwidth for ssh upload (e.g. 2500 kb/s) \n"
+  echo -e "-bw, \t--bandwidth \tlimit bandwidth for ssh upload (e.g. 2500 kb/s)"
+  echo -e "-r, \t--retention \tBackup Retention (e.g. 5 for 5 days (uses find -mtime)) \n"
 }
 
 function lvm-snap
@@ -120,7 +121,7 @@ function copy-aws
   snapname=`echo $1 | cut -d"/" -f4`
   virsh dumpxml $VMNAME | aws s3 cp - "${S3_PATH}/${VMNAME}-`date $TS`.xml"
 
-  snapfile="$DEST/${VMNAME}_snap-`date $TS`.img.lzo"
+  snapfile="$DEST/${snapname}_snap-`date $TS`.img.lzo"
 
   size=`stat -c "%s" $snapfile`
 
@@ -146,6 +147,12 @@ function copy-aws
 
 }
 
+function cleanup-backups
+{
+  echo "[INFO] cleaning up backups \"${DEST}\" with retention: ${RE} days.."
+  find ${DEST} -mtime +${RE} -iname "${VMNAME}*" -type f -print -delete
+}
+
 function check-aws
 {
   command -v aws >/dev/null 2>&1 || { echo >&2 "I require awscli but it's not installed. Use \"pip install awscli\"  to solve this problem. Aborting.."; exit 1; }
@@ -165,6 +172,24 @@ function check-pv
 {
   command -v pv >/dev/null 2>&1 || { echo >&2 "I require pv for progressbar but it's not installed. Use \"apt-get install pv\"  to solve this problem. Aborting.."; exit 1; }
   command -v bc >/dev/null 2>&1 || { echo >&2 "I require bc for progressbar but it's not installed. Use \"apt-get install bc\"  to solve this problem. Aborting.."; exit 1; }
+}
+
+function check-retention
+{
+  if [[ ! $RE =~ ^[1-9]{1,} ]]; then
+    echo "[ERROR] retention is invalid! Use \"-r 14\" for 14 days (see \"man find\" -mtime section)"
+    exit 1
+  fi
+
+  if [ ! -n "$DEST" ]; then
+    echo "[ERROR] Destination must be set to use retention parameter! Use -d or --destination."
+    exit 1
+  fi
+
+  if [ ! -n "$VMNAME" ]; then
+    echo "[ERROR] VM name must be set to use retention parameter! Use -vm or --vmname."
+    exit 1
+  fi
 }
 
 function findDeviceArray
@@ -199,9 +224,6 @@ if [ "$#" -lt 3 ]; then
 fi
 
 # some defaults
-BACKUPSSH=''
-DEST=''
-VMNAME=''
 TS='+%F'
 
 # check if lzop is installed
@@ -238,6 +260,9 @@ do
     -bw  | --bandwidth )   shift
     BW=$1
     ;;
+    -r  | --retention )   shift
+    RE=$1
+    ;;
     -h  | --help )         usage
     exit
     ;;
@@ -251,17 +276,23 @@ done
 
 # check if trickle is installed if needed
 if [ -n "$BW" ]; then # limit bandwidth
-check-trickle
+  check-trickle
 fi
 
 # check if pv is installed if needed
 if [ -n "$PROGRESS" ]; then # show progressbar
-check-pv
+  check-pv
 fi
 
 # check if aws cli is installed if needed
 if [ -n "$S3_PATH" ]; then # use aws s3
-check-aws
+  check-aws
+fi
+
+# check backup retention and cleaning up
+if [ -n "$RE" ]; then
+  check-retention
+  cleanup-backups
 fi
 
 # get devices
@@ -301,7 +332,6 @@ do
         backup-aws $i
       fi
     fi
-
     lvm-snap-remove $i
   fi
 

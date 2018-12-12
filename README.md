@@ -4,7 +4,7 @@ libvirt-lvm-backuper
 lvm vm backup for libvirt
 
 
-usage: ./lvm-backuper.sh -vm vmname -d /tmp/ [-pb] [-ssh "-p 22 user@example.com:/path/to/dest"] [-s3 "s3://BUCKET/PATH"] [-ts +%F] [-ex "storage01,storage02"] [-bw 2500]
+usage: ./lvm-backuper.sh -vm vmname -d /tmp/ [-pb] [-ssh "-p 22 user@example.com:/path/to/dest"] [-s3 "s3://BUCKET/PATH"] [-ts +%F] [-ex "storage01,storage02"] [-bw 2500] [-r 14]
 
 -vm, 		--vmname 	    	guestname
 
@@ -21,6 +21,8 @@ usage: ./lvm-backuper.sh -vm vmname -d /tmp/ [-pb] [-ssh "-p 22 user@example.com
 -ex,    --exclude       exclude logical volume from backup
 
 -bw,    --bandwidth     limit bandwidth for ssh upload (e.g. 2500 kb/s)
+
+-r,    --retention      Backup Retention (e.g. 5 for 5 days)
 
 
 examples:
